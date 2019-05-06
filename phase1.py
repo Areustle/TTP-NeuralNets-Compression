@@ -24,6 +24,8 @@ import shutil
 import logging
 import time
 
+from termcolor import colored
+
 def list_multiply(arr):
     res = 1
     for a in arr:
@@ -57,7 +59,7 @@ def main(argv):
         help = "[default: %(default)s] The location of the pretrained model for phase0.",
         metavar = '<PMD>'
     )
-    
+
     parser.add_argument(
         '--phase_zero', '-pz', default = '/tmp/models/cifar10/phase0',
         help = "[default: %(default)s] The directory where we stored the results from phase0",
@@ -69,7 +71,7 @@ def main(argv):
         help = "[default: %(default)s] The filename of checkpoint in phase0 and phase1.",
         metavar = '<FN>'
     )
-    
+
     parser.add_argument(
         '--exp_growth', '-eg', default = False,
         help = "controls the weights we assigned to different components in the loss function",
@@ -77,7 +79,7 @@ def main(argv):
     )
 
     parser.add_argument(
-        '--continue_training', '-ct', default = -1, type=int, 
+        '--continue_training', '-ct', default = -1, type=int,
         help = "continue training from block i (-1 means do not continue training)",
         metavar = '<CT>'
     )
@@ -105,7 +107,7 @@ def main(argv):
                     filename='model.ckpt')
 
     flags = parser.parse_args(args=argv[1:])
-    
+
     '''Define the parameters we need for each experiment'''
     if flags.model_class == 'cifar10':
         model_class, input_fn, model_fn = Cifar10Model, cifar_input_fn, cifar10_model_fn
@@ -123,18 +125,18 @@ def main(argv):
     compression_rate, epoch_num = flags.rate, flags.train_epochs
 
     is_training = False
-    
-    pretrained_model_dir = flags.pretrained_model_dir 
+
+    pretrained_model_dir = flags.pretrained_model_dir
     phase0_store = flags.phase_zero
 
     continue_training = flags.continue_training
-    print("continue_training", continue_training)
+    print(colored(("continue_training", continue_training), "green"))
     continue_checkpoint_file = flags.continue_checkpoint_file
 
     filename = flags.filename
-    print("filename first: ", filename)
+    print(colored(("filename first: ", filename), "green"))
     checkpoint_file = '%s/%s/rate%s/%s' %(phase0_store, method, compression_rate, filename)
-    print("checkpoint_file first: ", checkpoint_file)
+    print(colored(("checkpoint_file first: ", checkpoint_file), "green"))
 
     phase1_store= flags.output_path
     output_dir = '%s/%s/rate%s' %(phase1_store, method, compression_rate)
@@ -197,103 +199,107 @@ def main(argv):
             else:
                 current_checkpoint_file = '%s/block%d_%s-%d' %(output_dir, block_i-1, filename, step)
             train_vars = []
-        
-        train_vars.extend(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope = "%s/block%d" %(scope, block_i))) 
+
+        train_vars.extend(tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope = "%s/block%d" %(scope, block_i)))
         total_params = calculate_total_params(train_vars)
-        train_phase_1 = tf.train.AdamOptimizer(1e-3).minimize(cur_loss, var_list = train_vars)     
+        train_phase_1 = tf.train.AdamOptimizer(1e-3).minimize(cur_loss, var_list = train_vars)
 
-        print("\nStart training %s which has %d parameters\n" %(name, total_params))   
+        print(colored(("\nStart training %s which has %d parameters\n" %(name, total_params))   , "green"))
         logging.info("\nStart training %s which has %d parameters\n" %(name, total_params))
-        print("current_checkpoint_file", current_checkpoint_file)
-        
-        config = tf.ConfigProto(allow_soft_placement=True, device_count={'GPU': 1})
-        with tf.Session(config=config) as sess:
-            sess.run(tf.global_variables_initializer())
+        print(colored(("current_checkpoint_file", current_checkpoint_file), "green"))
 
-            var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
-            saver_m = tf.train.Saver(var_list = [v for v in var_list if 'Adam' not in v.name])
-            saver_m.restore(sess, current_checkpoint_file)
-            
-            var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='normal')
-            saver_p = tf.train.Saver(var_list = [v for v in var_list if 'Adam' not in v.name])
-            saver_p.restore(sess, tf.train.latest_checkpoint(pretrained_model_dir))
-            
-            for epoch in range(1, epoch_num + 1):
-                dataset_tr = input_fn(is_training=True, data_dir=data_dir, batch_size=batch_size)
-                iterator_tr = dataset_tr.make_initializable_iterator()
-                next_element = iterator_tr.get_next()
-                sess.run(iterator_tr.initializer)
-                
-                print("epoch %d: " % (epoch))
-                logging.info("epoch %d: " % (epoch))
-                t0 = time.time()
-                
-                while True:
-                    try:
-                        (features, labels) = sess.run(next_element)
-                        train_phase_1.run(feed_dict = {x: features, y: labels})                
-                        if step % 100 == 0:
-                            train_accuracy = accuracy.eval(feed_dict = {x: features, y: labels})
-                            mse_val = cur_loss.eval(feed_dict = {x: features, y: labels})
-                            t1 = time.time()
-                            print("step %d, training accuracy: %.6f" % (step, train_accuracy))
-                            print("mse: %.6f (%.3f sec)" %(mse_val, t1-t0))
-                            logging.info("step %d, training accuracy: %.6f" % (step, train_accuracy))
-                            logging.info("mse: %.6f (%.3f sec)" %(mse_val, t1-t0))
-                            t0 = time.time()
+        with tf.contrib.tfprof.ProfileContext('./profdir') as pctx:
+            config = tf.ConfigProto(allow_soft_placement=False, device_count={'GPU': 1})
+            with tf.Session(config=config) as sess:
+                sess.run(tf.global_variables_initializer())
+                writer = tf.summary.FileWriter("logdir", sess.graph)
 
-                        step = step + 1
-                    except tf.errors.OutOfRangeError:
-                        break
-                
-                if epoch % testing_every_n_epochs == 0:
-                    dataset_test = input_fn(is_training=False, data_dir=data_dir, batch_size=batch_size)
-                    iterator_test = dataset_test.make_initializable_iterator()
-                    next_test_ele = iterator_test.get_next()
-                    sess.run(iterator_test.initializer)
-                        
-                    test_accuracy = 0.0
-                    num_examples = 0
+                var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
+                saver_m = tf.train.Saver(var_list = [v for v in var_list if 'Adam' not in v.name])
+                saver_m.restore(sess, current_checkpoint_file)
+
+                var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='normal')
+                saver_p = tf.train.Saver(var_list = [v for v in var_list if 'Adam' not in v.name])
+                saver_p.restore(sess, tf.train.latest_checkpoint(pretrained_model_dir))
+
+                for epoch in range(1, epoch_num + 1):
+                    dataset_tr = input_fn(is_training=True, data_dir=data_dir, batch_size=batch_size)
+                    iterator_tr = dataset_tr.make_initializable_iterator()
+                    next_element = iterator_tr.get_next()
+                    sess.run(iterator_tr.initializer)
+
+                    print(colored(("epoch %d: " % (epoch)), "green"))
+                    logging.info("epoch %d: " % (epoch))
+                    t0 = time.time()
+
                     while True:
                         try:
-                            (features, labels) = sess.run(next_test_ele)
-                            acc = accuracy.eval(feed_dict = {x: features, y: labels})
-                            test_accuracy = test_accuracy + acc*labels.shape[0]
-                            num_examples = num_examples + labels.shape[0]                    
+                            (features, labels) = sess.run(next_element)
+                            train_phase_1.run(feed_dict = {x: features, y: labels})
+                            if step % 100 == 0:
+                                train_accuracy = accuracy.eval(feed_dict = {x: features, y: labels})
+                                mse_val = cur_loss.eval(feed_dict = {x: features, y: labels})
+                                t1 = time.time()
+                                print(colored(("step %d, training accuracy: %.6f" % (step, train_accuracy)), "green"))
+                                print(colored(("mse: %.6f (%.3f sec)" %(mse_val, t1-t0)), "green"))
+                                logging.info("step %d, training accuracy: %.6f" % (step, train_accuracy))
+                                logging.info("mse: %.6f (%.3f sec)" %(mse_val, t1-t0))
+                                t0 = time.time()
+
+                            step = step + 1
                         except tf.errors.OutOfRangeError:
-                            break                        
-                        
-                    test_accuracy = test_accuracy/(num_examples+0.0)
-                    print("Epoch %d, step %d, testing accuracy: %.6f" % (epoch, step, test_accuracy))
-                    logging.info("Epoch %d, step %d, testing accuracy: %.6f" % (epoch, step, test_accuracy))
+                            break
 
-                    saver_m.save(sess, output_file, global_step=step)
-                    print("phase1: resnet model (%s) saved to %s with global_step %d" %(name, output_dir, step))
-                    logging.info("phase1: resnet model (%s) saved to %s with global_step %d" %(name, output_dir, step))
-            
-            dataset_test = input_fn(is_training=False, data_dir=data_dir, batch_size=batch_size)
-            iterator_test = dataset_test.make_initializable_iterator()
-            next_test_ele = iterator_test.get_next()
-            sess.run(iterator_test.initializer)
-                        
-            test_accuracy = 0.0
-            num_examples = 0
-            while True:
-                try:
-                    (features, labels) = sess.run(next_test_ele)
-                    acc = accuracy.eval(feed_dict = {x: features, y: labels})
-                    test_accuracy = test_accuracy + acc*labels.shape[0]
-                    num_examples = num_examples + labels.shape[0]                    
-                except tf.errors.OutOfRangeError:
-                    break                        
-                    
-            test_accuracy = test_accuracy/(num_examples+0.0)
-            print("%s final testing accuracy (epoch %d, step %d): %.6f" % (name, epoch, step, test_accuracy))
-            logging.info("%s final testing accuracy (epoch %d, step %d): %.6f" % (name, epoch, step, test_accuracy))
+                    if epoch % testing_every_n_epochs == 0:
+                        dataset_test = input_fn(is_training=False, data_dir=data_dir, batch_size=batch_size)
+                        iterator_test = dataset_test.make_initializable_iterator()
+                        next_test_ele = iterator_test.get_next()
+                        sess.run(iterator_test.initializer)
 
-            saver_m.save(sess, output_file, global_step=step)
-            print("phase1: final resnet model (%s) saved to %s with global_step %d" %(name, output_dir, step))
-            logging.info("phase1: final resnet model (%s) saved to %s with global_step %d" %(name, output_dir, step))
+                        test_accuracy = 0.0
+                        num_examples = 0
+                        while True:
+                            try:
+                                (features, labels) = sess.run(next_test_ele)
+                                acc = accuracy.eval(feed_dict = {x: features, y: labels})
+                                test_accuracy = test_accuracy + acc*labels.shape[0]
+                                num_examples = num_examples + labels.shape[0]
+                            except tf.errors.OutOfRangeError:
+                                break
+
+                        test_accuracy = test_accuracy/(num_examples+0.0)
+                        print(colored(("Epoch %d, step %d, testing accuracy: %.6f" % (epoch, step, test_accuracy)), "green"))
+                        logging.info("Epoch %d, step %d, testing accuracy: %.6f" % (epoch, step, test_accuracy))
+
+                        saver_m.save(sess, output_file, global_step=step)
+                        print(colored(("phase1: resnet model (%s) saved to %s with global_step %d" %(name, output_dir, step)), "green"))
+                        logging.info("phase1: resnet model (%s) saved to %s with global_step %d" %(name, output_dir, step))
+
+                dataset_test = input_fn(is_training=False, data_dir=data_dir, batch_size=batch_size)
+                iterator_test = dataset_test.make_initializable_iterator()
+                next_test_ele = iterator_test.get_next()
+                sess.run(iterator_test.initializer)
+
+                test_accuracy = 0.0
+                num_examples = 0
+                while True:
+                    try:
+                        (features, labels) = sess.run(next_test_ele)
+                        acc = accuracy.eval(feed_dict = {x: features, y: labels})
+                        test_accuracy = test_accuracy + acc*labels.shape[0]
+                        num_examples = num_examples + labels.shape[0]
+                    except tf.errors.OutOfRangeError:
+                        break
+
+                test_accuracy = test_accuracy/(num_examples+0.0)
+                print(colored(("%s final testing accuracy (epoch %d, step %d): %.6f" % (name, epoch, step, test_accuracy)), "green"))
+                logging.info("%s final testing accuracy (epoch %d, step %d): %.6f" % (name, epoch, step, test_accuracy))
+
+                saver_m.save(sess, output_file, global_step=step)
+                print(colored(("phase1: final resnet model (%s) saved to %s with global_step %d" %(name, output_dir, step)), "green"))
+                logging.info("phase1: final resnet model (%s) saved to %s with global_step %d" %(name, output_dir, step))
+                writer.close()
+
 
 
 if __name__ == '__main__':

@@ -23,6 +23,8 @@ import sys, os
 import shutil
 import logging
 
+#--data_dir=--pretrained_model_dir=/ --method=rcp --scope=rcp --rate=0.1 --output_path=
+
 def main(argv):
     parser = ResnetArgParser()
 
@@ -43,17 +45,17 @@ def main(argv):
         help = "[default: %(default)s] The location of the pretrained model for phase0.",
         metavar = '<PMD>'
     )
-    
+
     # Set defaults that are reasonable for this model.
-    parser.set_defaults(data_dir='/tmp/cifar10_data',
-                    pretrained_model_dir='/tmp/pretrained_model', # pretrained model after loading into our scope
+    parser.set_defaults(data_dir='/home/areustle/data',
+                    pretrained_model_dir='/home/areustle/models/tensorized_cifar10/pretrained', # pretrained model after loading into our scope
                     resnet_size=32,
                     batch_size=128,
                     version=2,
-                    output_path='/tmp/output',
-                    method='svd',
-                    scope='svd',
-                    rate=0.5,
+                    output_path='/home/areustle/models/tensorized_cifar10/phase0',
+                    method='rcp',
+                    scope='rcp',
+                    rate=0.1,
                     rate_decay='flat')
 
     flags = parser.parse_args(args=argv[1:])
@@ -69,7 +71,7 @@ def main(argv):
         model_class, input_fn, model_fn = ImagenetModel, imagenet_input_fn, imagenet_model_fn
         model_conversion_fn = imagenet_model_conversion_fn
         total_params, growth_params = 23445504, 83640320
-     
+
     if rate_decay == 'linear_inc':
         starting_rate = 0
     elif rate_decay == 'linear_dec':
@@ -82,14 +84,14 @@ def main(argv):
     resnet_size, batch_size, version = flags.resnet_size, flags.batch_size, flags.version
     method, scope= flags.method, flags.scope
 
-    pretrained_model_dir = flags.pretrained_model_dir 
+    pretrained_model_dir = flags.pretrained_model_dir
 
     output_path = flags.output_path
     checkpoint_file = '%s/%s/rate%s/%s' %(output_path, method, compression_rate, 'model.ckpt')
 
     if not os.path.exists(output_path):
         os.makedirs(output_path)
-    
+
     logging.basicConfig(level=logging.INFO,
                     datefmt='%m-%d %H:%M',
                     filename='%s/%s_%s.log' %(output_path, method, compression_rate),
@@ -106,11 +108,11 @@ def main(argv):
     var_normal_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=resnet_model.DEFAULT_SCOPE)
     var_normal_list = [v for v in var_normal_list if 'Momentum' not in v.name]
 
-    var_normal_list_vals = [] 
+    var_normal_list_vals = []
 
     with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         print(pretrained_model_dir)
-        saver.restore(sess, tf.train.latest_checkpoint(pretrained_model_dir))    
+        saver.restore(sess, tf.train.latest_checkpoint(pretrained_model_dir))
         for v in var_normal_list:
             value = sess.run(v)
             var_normal_list_vals.append((v.name, value))
@@ -118,7 +120,7 @@ def main(argv):
     conv_normal_list_vals = [(n, v) for (n, v) in var_normal_list_vals if 'conv2d' in n]
     dense_normal_list_vals = [(n, v) for (n, v) in var_normal_list_vals if 'dense' in n]
     bn_normal_list_vals = [(n, v) for (n, v) in var_normal_list_vals if 'batch_normalization' in n]
-    
+
     tf.reset_default_graph()
 
     model = model_class(resnet_size=resnet_size, method=method, scope=scope, rate=compression_rate, rate_decay=rate_decay)
@@ -131,14 +133,14 @@ def main(argv):
     conv_tensor_list = [v for v in var_tensor_list if 'conv2d' in v.name]
     dense_tensor_list = [v for v in var_tensor_list if 'dense' in v.name]
     bn_tensor_list = [v for v in var_tensor_list if 'batch_normalization' in v.name]
-    
+
     new_model_dir = '%s/%s/rate%s/' %(output_path, method, compression_rate)
     if os.path.exists(new_model_dir):
         shutil.rmtree(new_model_dir)
     else:
         os.makedirs(new_model_dir)
 
-    with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess: 
+    with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
         sess.run(tf.global_variables_initializer())
 
         # load weights for the first convolutional layer (the one that connects to the input)
@@ -155,7 +157,7 @@ def main(argv):
 
             ref_scope = name.split('kernel')[0]
             new_scope = ref_scope.replace(resnet_model.DEFAULT_SCOPE, method)
-            new_kernels = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=new_scope)        
+            new_kernels = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=new_scope)
 
             if len(new_kernels) > 1:
                 for v in new_kernels:
@@ -176,7 +178,7 @@ def main(argv):
             load_params_conv2d_tensor(sess, reference, tensorized, method=method, rate=cur_rate)
 
         #load weight for the last layer (dense layer with bias)
-        for i in range(len(dense_normal_list_vals)):      
+        for i in range(len(dense_normal_list_vals)):
             sess.run(dense_tensor_list[i].assign(dense_normal_list_vals[i][1]))
 
         new_saver = tf.train.Saver(var_list = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope = scope))

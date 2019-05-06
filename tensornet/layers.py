@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+from termcolor import colored
 
 # default initializers
 INITIALIZER_WEIGHT = tf.truncated_normal_initializer(stddev = 0.1)
@@ -7,7 +8,7 @@ INITIALIZER_BIAS   = tf.constant_initializer(0.1)
 
 # default settings for convolutional layers
 DEFAULT_DATA_FORMAT = "channels_last"
-DEFAULT_RETURN_INFO = False 
+DEFAULT_RETURN_INFO = False
 DEFAULT_USE_BIAS = False
 
 # default settings for tensorization method
@@ -15,7 +16,7 @@ DEFAULT_METHOD = "normal"
 DEFAULT_COMPRESSION_RATE = 0.1
 
 
-# Part 0: Auxilary functions 
+# Part 0: Auxilary functions
 
 def generate_shape(number, order = None, base = None, reverse = False):
   assert number > 0 and (number & (number - 1)) == 0, \
@@ -43,7 +44,7 @@ def generate_shape(number, order = None, base = None, reverse = False):
       number /= 2
 
   if reverse: shape.reverse()
-  return shape  
+  return shape
 
 # Fix the zero padding function in the built-in library
 def fixed_padding_tensor(inputs, kernel_size, data_format):
@@ -52,13 +53,13 @@ def fixed_padding_tensor(inputs, kernel_size, data_format):
   pad_end = pad_total - pad_beg
 
   pad = [[0, 0], [0, 0], [pad_beg, pad_end], [pad_beg, pad_end]] if data_format == "channels_first" \
-    else [[0, 0], [pad_beg, pad_end], [pad_beg, pad_end], [0, 0]] 
+    else [[0, 0], [pad_beg, pad_end], [pad_beg, pad_end], [0, 0]]
 
   return tf.pad(inputs, pad)
 
 
 # Warpper function for all 2D-convoltional layers
-def conv2d_tensor(inputs, filters, kernel_size, strides = 1, data_format = DEFAULT_DATA_FORMAT, use_bias = DEFAULT_USE_BIAS, 
+def conv2d_tensor(inputs, filters, kernel_size, strides = 1, data_format = DEFAULT_DATA_FORMAT, use_bias = DEFAULT_USE_BIAS,
 	return_info = DEFAULT_RETURN_INFO, method = DEFAULT_METHOD, rate = DEFAULT_COMPRESSION_RATE):
 
   options = {"normal": conv2d,
@@ -80,7 +81,7 @@ def conv2d_tensor(inputs, filters, kernel_size, strides = 1, data_format = DEFAU
     method, conv2d_func = "svd", options["svd"]
 
   params = generate_params_conv2d_tensor(channels, filters, kernel_size, method = method, rate = rate)
-  
+
   #print("params: ", params)
   ''' No need for our hypothesis as we are comparing nonreshaped td vs reshaped td
   # If the rank for a certain rate is too small, use standard convolutional layer instead
@@ -93,16 +94,16 @@ def conv2d_tensor(inputs, filters, kernel_size, strides = 1, data_format = DEFAU
 
   kernels = generate_kernels_conv2d_tensor(channels, filters, kernel_size, use_bias = use_bias, method = method, params = params)
 
-  outputs = conv2d_func(inputs, kernels, strides = strides, 
+  outputs = conv2d_func(inputs, kernels, strides = strides,
     padding = ("SAME" if strides == 1 else "VALID"), use_bias = use_bias, data_format = data_format)
 
   return outputs if not return_info else (outputs, params, kernels)
 
 
 # Warpper function for all kernels generating function for convolutional layer
-def generate_kernels_conv2d_tensor(input_filters, output_filters, kernel_size, 
+def generate_kernels_conv2d_tensor(input_filters, output_filters, kernel_size,
   use_bias = DEFAULT_USE_BIAS, method = DEFAULT_METHOD, params = {}):
-  
+
   options = {"normal": generate_kernels_conv2d,
 
              "svd": generate_kernels_conv2d_svd, "cp": generate_kernels_conv2d_cp,
@@ -121,9 +122,9 @@ def generate_kernels_conv2d_tensor(input_filters, output_filters, kernel_size,
 
 
 # Warpper function for all parameters generating function for convolutional layer
-def generate_params_conv2d_tensor(input_filters, output_filters, kernel_size, 
+def generate_params_conv2d_tensor(input_filters, output_filters, kernel_size,
   method = DEFAULT_METHOD, rate = DEFAULT_COMPRESSION_RATE):
-  
+
   options = {"normal": generate_params_conv2d,
 
              "svd": generate_params_conv2d_svd, "cp": generate_params_conv2d_cp,
@@ -142,7 +143,7 @@ def generate_params_conv2d_tensor(input_filters, output_filters, kernel_size,
 
 
 # Wrapper function for all dense layers
-def dense_tensor(inputs, output_units, use_bias = DEFAULT_USE_BIAS, return_info = DEFAULT_RETURN_INFO, 
+def dense_tensor(inputs, output_units, use_bias = DEFAULT_USE_BIAS, return_info = DEFAULT_RETURN_INFO,
   method = DEFAULT_METHOD, rate = DEFAULT_COMPRESSION_RATE):
 
   options = {"normal": dense, "cp": dense_cp, "tk": dense_tk, "tt": dense_tt}
@@ -159,10 +160,10 @@ def dense_tensor(inputs, output_units, use_bias = DEFAULT_USE_BIAS, return_info 
   return outputs if not return_info else outputs, params, kernels
 
 
-def generate_kernels_dense_tensor(input_units, output_units, 
+def generate_kernels_dense_tensor(input_units, output_units,
   use_bias = DEFAULT_USE_BIAS, method = DEFAULT_METHOD, params = {}):
-  
-  options = {"normal": generate_kernels_dense, "cp": generate_kernels_dense_cp, 
+
+  options = {"normal": generate_kernels_dense, "cp": generate_kernels_dense_cp,
               "tk": generate_kernels_dense_tk, "tt": generate_kernels_dense_tt}
 
   assert method in options, "The method is not currently supported."
@@ -172,10 +173,10 @@ def generate_kernels_dense_tensor(input_units, output_units,
   return kernels
 
 
-def generate_params_dense_tensor(input_units, output_units, 
+def generate_params_dense_tensor(input_units, output_units,
   method = DEFAULT_METHOD, rate = DEFAULT_COMPRESSION_RATE):
 
-  options = {"normal": generate_params_dense, "cp": generate_params_dense_cp, 
+  options = {"normal": generate_params_dense, "cp": generate_params_dense_cp,
               "tk": generate_params_dense_tk, "tt": generate_params_dense_tt}
 
   assert method in options, "The method is not currently supported."
@@ -196,7 +197,7 @@ def conv2d(inputs, kernels, strides = 1, padding = "SAME", use_bias = False, dat
   outputs = tf.nn.conv2d(inputs, kernels["kernel"], strides = strides, padding = padding, data_format = data_format)
   if use_bias: outputs = outputs + kernels["bias"]
 
-  return outputs 
+  return outputs
 
 
 def generate_kernels_conv2d(input_filters, output_filters, kernel_size, use_bias, params):
@@ -219,9 +220,15 @@ def conv2d_svd(inputs, kernels, strides = 1, padding = 'SAME', use_bias = False,
 
   strides_0 = [1, strides, 1, 1] if data_format == "NHWC" else [1, 1, strides, 1]
   strides_1 = [1, 1, strides, 1] if data_format == "NHWC" else [1, 1, 1, strides]
+  print(colored((strides, data_format), "cyan"))
+  print("K0", colored(kernels["kernel_0"].shape, "cyan"))
+  print("K1", colored(kernels["kernel_1"].shape, "cyan"))
 
-  tensor = tf.nn.conv2d(inputs, kernels["kernel_0"], strides = strides_0, padding = padding, data_format = data_format)  
+  tensor = tf.nn.conv2d(inputs, kernels["kernel_0"], strides = strides_0, padding = padding, data_format = data_format)
   outputs = tf.nn.conv2d(tensor, kernels["kernel_1"], strides = strides_1, padding = padding, data_format = data_format)
+  print("U0", colored(inputs.shape, "cyan"))
+  print("U1", colored(tensor.shape, "cyan"))
+  print("V ", colored(outputs.shape, "cyan"))
   if use_bias: outputs = outputs + kernels["bias"]
 
   return outputs
@@ -289,11 +296,11 @@ def conv2d_tk(inputs, kernels, strides = 1, padding = 'SAME', use_bias = False, 
 
   strides = [1, strides, strides, 1] if data_format == "NHWC" else [1, 1, strides, strides]
 
-  tensor = tf.nn.conv2d(inputs, kernels["kernel_0"], strides = [1, 1, 1, 1], padding = padding, data_format = data_format)  
+  tensor = tf.nn.conv2d(inputs, kernels["kernel_0"], strides = [1, 1, 1, 1], padding = padding, data_format = data_format)
   tensor = tf.nn.conv2d(tensor, kernels["kernel_1"], strides = strides, padding = padding, data_format = data_format)
   outputs = tf.nn.conv2d(tensor, kernels["kernel_2"], strides = [1, 1, 1, 1], padding = padding, data_format = data_format)
 
-  if use_bias: outputs = outputs + kernels["bias"]  
+  if use_bias: outputs = outputs + kernels["bias"]
   return outputs
 
 def generate_kernels_conv2d_tk(input_filters, output_filters, kernel_size, use_bias, params):
@@ -327,8 +334,8 @@ def conv2d_tt(inputs, kernels, strides = 1, padding = 'SAME', use_bias = False, 
   strides_0 = [1, strides, 1, 1] if data_format == "NHWC" else [1, 1, strides, 1]
   strides_1 = [1, 1, strides, 1] if data_format == "NHWC" else [1, 1, 1, strides]
 
-  tensor = tf.nn.conv2d(inputs, kernels["kernel_0"], strides = [1, 1, 1, 1], padding = padding, data_format = data_format)  
-  tensor = tf.nn.conv2d(tensor, kernels["kernel_1"], strides = strides_0, padding = padding, data_format = data_format)  
+  tensor = tf.nn.conv2d(inputs, kernels["kernel_0"], strides = [1, 1, 1, 1], padding = padding, data_format = data_format)
+  tensor = tf.nn.conv2d(tensor, kernels["kernel_1"], strides = strides_0, padding = padding, data_format = data_format)
   tensor = tf.nn.conv2d(tensor, kernels["kernel_2"], strides = strides_1, padding = padding, data_format = data_format)
   outputs = tf.nn.conv2d(tensor, kernels["kernel_3"], strides = [1, 1, 1, 1], padding = padding, data_format = data_format)
 
@@ -355,7 +362,7 @@ def generate_params_conv2d_tt(input_filters, output_filters, kernel_size, rate):
   b = input_filters + output_filters
   c = - rate * original_size
   rank = np.int(np.ceil((-b + np.sqrt(b ** 2 - 4 * a * c)) / (2*a)))
-  
+
   rank = min(rank, input_filters, output_filters)
   params = {"ranks": [rank] * 3}
   return params
@@ -409,7 +416,7 @@ def dense_cp(inputs, kernels, use_bias = False):
 
   outputs = tf.reshape(tensor, [-1, np.prod(output_shape)])
   if use_bias: outputs = outputs + kernels["bias"]
-  return outputs 
+  return outputs
 
 def generate_kernels_dense_cp(input_units, output_units, use_bias, params):
   input_shape, output_shape, rank = params["input_shape"], params["output_shape"], params["rank"]
@@ -434,7 +441,7 @@ def generate_kernels_dense_cp(input_units, output_units, use_bias, params):
 def generate_params_dense_cp(input_units, output_units, rate):
   input_shape = generate_shape(input_units, base = DEFAULT_FACTORIZATION_BASE)
   order = len(input_shape)
-  assert order >= 2, "The input_units is too small to be further factorized." 
+  assert order >= 2, "The input_units is too small to be further factorized."
 
   output_shape = generate_shape(output_units, order = order, reverse = True)
 
@@ -444,7 +451,7 @@ def generate_params_dense_cp(input_units, output_units, rate):
   rank = np.int(np.ceil(rank))
 
   params = {"input_shape": input_shape,
-            "output_shape": output_shape, 
+            "output_shape": output_shape,
             "rank" : rank}
 
   return params
@@ -506,14 +513,14 @@ def generate_kernels_dense_tk(input_units, output_units, use_bias, params):
 
   kernels = {}
   for l in range(input_order):
-    kernels["input_kernel_" + str(l)] = tf.get_variable("input_kernel_" + str(l), 
+    kernels["input_kernel_" + str(l)] = tf.get_variable("input_kernel_" + str(l),
       [input_shape[l], ranks[l]], initializer = INITIALIZER_WEIGHT)
 
-  kernels["core_kernel"] = tf.get_variable("core_kernel_" + str(l), 
+  kernels["core_kernel"] = tf.get_variable("core_kernel_" + str(l),
     ranks, initializer = INITIALIZER_WEIGHT)
 
   for l in range(output_order):
-    kernels["output_kernel_" + str(l)] = tf.get_variable("output_kernel_" + str(l), 
+    kernels["output_kernel_" + str(l)] = tf.get_variable("output_kernel_" + str(l),
       [ranks[l], output_shape[l]], initializer = INITIALIZER_WEIGHT)
 
   if use_bias: kernels["bias"] = tf.get_variable("bias", [output_units], initializer = INITIALIZER_BIAS)
@@ -531,7 +538,7 @@ def generate_params_dense_tk(input_units, output_units, rate):
   rank = np.power(original_size * rate, 1.0 / order)
   rank = np.int(np.ceil(rank))
   while np.power(rank, order) + (np.sum(input_shape) + np.sum(output_shape)) * rank < compressed_size:
-    rank += 1 
+    rank += 1
 
   params = {"input_shape": input_shape,
             "output_shape": output_shape,
@@ -603,7 +610,7 @@ def generate_params_dense_tt(input_units, output_units, rate):
   rank = np.int(np.ceil((-b + np.sqrt(b ** 2 - 4 * a * c)) / (2*a)))
 
   params = {"input_shape": input_shape,
-            "output_shape": output_shape, 
+            "output_shape": output_shape,
             "ranks": [rank] * (order - 1)}
 
   return params
@@ -611,9 +618,10 @@ def generate_params_dense_tt(input_units, output_units, rate):
 
 ## Part 3: Advance 2D-convolutional layer
 
-# Advanced Parafac-convolutional layer 
+# Advanced Parafac-convolutional layer
 def conv2d_rcp(inputs, kernels, strides = 1, padding = "SAME", use_bias = False, data_format = "NHWC"):
-  # extract parameters from the kernels
+  print(colored((inputs.shape), 'cyan'))
+  print(colored(kernels, 'blue'))
 
   # (1) dense kernels
   order, input_shape, output_shape = 0, [], []
@@ -626,6 +634,8 @@ def conv2d_rcp(inputs, kernels, strides = 1, padding = "SAME", use_bias = False,
     output_shape.append(shape[2])
     order += 1
 
+  print(order)
+
   # (2) convolutional kernel (optional)
   if "kernel_conv" in kernels:
     shape = kernels["kernel_conv"].shape.as_list()
@@ -633,25 +643,39 @@ def conv2d_rcp(inputs, kernels, strides = 1, padding = "SAME", use_bias = False,
     assert shape[2] == rank, "The 3rd-dimension of the convolutional kernel should match the rank."
 
   # axes for tensor contraction
-  axes = [[3], [0]] if data_format == "NHWC" else [[1], [0]] 
-  
+  axes = [[3], [0]] if data_format == "NHWC" else [[1], [0]]
+
   # (1.1) operate with first dense kernel
   if data_format == "NHWC":
     tensor = tf.reshape(inputs, [-1] + inputs.shape.as_list()[1:3] + input_shape)
   else:
     tensor = tf.reshape(inputs, [-1] + input_shape + inputs.shape.as_list()[2:4])
 
+  print(data_format)
+  print(colored((tensor.shape), 'red'))
+  # NCHW (?, 4, 4, 32, 32)
+  # NHWC (?, 32, 32, 4, 4)
+
   kernel = tf.transpose(kernels["kernel_0"], perm = [1, 2, 0])
   tensor = tf.tensordot(tensor, kernel, axes = axes)
+  print(colored((tensor.shape), 'red'))
+  # NCHW (?, 4, 32, 32, 4, 11)
+  # NHWC (?, 32, 32, 4, 4, 11)
 
   tensor = tf.transpose(tensor, perm = [order + 3] + list(range(order + 3)))
+  print(colored((tensor.shape), 'red'))
+  # (11, ?, 4, 32, 32, 4)
 
   # (1.2) operate with the other dense kernels
   contract = lambda var: (tf.tensordot(var[0], var[1], axes = axes), 0)
   for l in range(1, order):
+    print(tensor.shape, axes, kernels["kernel_1"].shape)
     tensor, _ = tf.map_fn(contract, (tensor, kernels["kernel_" + str(l)]))
+    print(colored((tensor.shape), 'cyan'))
 
+  print(colored((tensor.shape), 'yellow'))
   tensor = tf.reshape(tensor, [rank] + [-1] + tensor.shape.as_list()[2:4] + [np.prod(output_shape)])
+  print(colored((tensor.shape), 'yellow'))
 
   # (2.1) operate with the convolutional kernel
   if "kernel_conv" in kernels:
@@ -682,6 +706,7 @@ def conv2d_rcp(inputs, kernels, strides = 1, padding = "SAME", use_bias = False,
       outputs = tf.transpose(tensor, perm = [0, 3, 1, 2])
 
   if use_bias: outputs = outputs + kernels["bias"]
+  print(colored(outputs, 'magenta'))
   return outputs
 
 def generate_kernels_conv2d_rcp(input_filters, output_filters, kernel_size, use_bias, params):
@@ -698,13 +723,13 @@ def generate_kernels_conv2d_rcp(input_filters, output_filters, kernel_size, use_
 
   kernels = {}
   for l in range(len(input_shape)):
-    kernels["kernel_" + str(l)] = tf.get_variable("kernel_" + str(l), 
+    kernels["kernel_" + str(l)] = tf.get_variable("kernel_" + str(l),
       [rank, input_shape[l], output_shape[l]], initializer = INITIALIZER_WEIGHT)
 
   if kernel_size > 1:
     kernels["kernel_conv"] = tf.get_variable("kernel_conv", [kernel_size, kernel_size, rank], initializer = INITIALIZER_WEIGHT)
 
-  if use_bias: 
+  if use_bias:
     kernels["bias"] = tf.get_variable("bias", [output_filters], initializer = INITIALIZER_BIAS)
 
   return kernels
@@ -718,10 +743,10 @@ def generate_params_conv2d_rcp(input_filters, output_filters, kernel_size, rate)
   unit_size = (2 * kernel_size if kernel_size > 1 else 0) + np.sum(input_shape) + np.sum(output_shape)
 
   rank = (rate + 0.0) * original_size / unit_size
-  rank = np.int(np.ceil(rank)) 
+  rank = np.int(np.ceil(rank))
 
-  params = {"input_shape": input_shape, 
-            "output_shape": output_shape, 
+  params = {"input_shape": input_shape,
+            "output_shape": output_shape,
             "rank": rank}
   return params
 
@@ -788,7 +813,7 @@ def conv2d_rtk(inputs, kernels, strides = 1, padding = "SAME", use_bias = False,
     tensor = tf.tensordot(tensor, kernels["kernel_output_" + str(l)], axes = axes)
 
   outputs = tf.reshape(tensor, [-1] + tensor.shape.as_list()[1:3] + [np.prod(output_shape)])
-  
+
   if data_format == "NCHW":
     outputs = tf.transpose(outputs, perm = [0, 3, 1, 2])
 
@@ -809,14 +834,14 @@ def generate_kernels_conv2d_rtk(input_filters, output_filters, kernel_size, use_
 
   kernels = {}
   for l in range(input_order):
-    kernels["kernel_input_" + str(l)] = tf.get_variable("kernel_input_" + str(l), 
+    kernels["kernel_input_" + str(l)] = tf.get_variable("kernel_input_" + str(l),
       [input_shape[l], ranks[l]], initializer = INITIALIZER_WEIGHT)
 
-  kernels["kernel_core"] = tf.get_variable("kernel_core", 
+  kernels["kernel_core"] = tf.get_variable("kernel_core",
     [kernel_size, kernel_size, np.prod(ranks[:input_order]), np.prod(ranks[input_order:])], initializer = INITIALIZER_WEIGHT)
 
   for l in range(output_order):
-    kernels["kernel_output_" + str(l)] = tf.get_variable("kernel_output_" + str(l), 
+    kernels["kernel_output_" + str(l)] = tf.get_variable("kernel_output_" + str(l),
       [ranks[l + input_order], output_shape[l]], initializer = INITIALIZER_WEIGHT)
 
   if use_bias: kernels["bias"] = tf.get_variable("bias", [output_filters], initializer = INITIALIZER_BIAS)
@@ -837,10 +862,10 @@ def generate_params_conv2d_rtk(input_filters, output_filters, kernel_size, rate)
   ranks, l = [rank] * order, 0
   while (kernel_size ** 2) * np.prod(ranks) + np.sum(np.multiply(shape, ranks)) < compressed_size:
     if ranks[l] < shape[l]: ranks[l] += 1
-    l = (l + 1) % order 
+    l = (l + 1) % order
 
-  params = {"input_shape": input_shape, 
-            "output_shape": output_shape, 
+  params = {"input_shape": input_shape,
+            "output_shape": output_shape,
             "ranks": ranks}
   return params
 
@@ -858,7 +883,7 @@ def conv2d_rtt(inputs, kernels, strides = 1, padding = "SAME", use_bias = False,
     assert shape[2] == (ranks[-1] if order else 1), \
       "The 3rd-dimension of each dense kernel should match the 4th-dimension of its previous one."
 
-    input_shape.append(shape[0]) 
+    input_shape.append(shape[0])
     output_shape.append(shape[1])
     ranks.append(shape[3])
     order += 1
@@ -913,7 +938,7 @@ def conv2d_rtt(inputs, kernels, strides = 1, padding = "SAME", use_bias = False,
   return outputs
 
 def generate_kernels_conv2d_rtt(input_filters, output_filters, kernel_size, use_bias, params):
-  input_shape, output_shape, ranks = params["input_shape"], params["output_shape"], params["ranks"] 
+  input_shape, output_shape, ranks = params["input_shape"], params["output_shape"], params["ranks"]
 
   order = len(input_shape)
   assert len(output_shape) == order and len(ranks) == order, \
@@ -927,16 +952,16 @@ def generate_kernels_conv2d_rtt(input_filters, output_filters, kernel_size, use_
   kernels = {}
   ranks = [1] + ranks
   for l in range(order):
-    kernels["kernel_" + str(l)] = tf.get_variable("kernel_" + str(l), 
+    kernels["kernel_" + str(l)] = tf.get_variable("kernel_" + str(l),
       [input_shape[l], output_shape[l], ranks[l], ranks[l+1]], initializer = INITIALIZER_WEIGHT)
 
   if kernel_size > 1:
-    kernels["kernel_conv"] = tf.get_variable("kernel_conv", 
+    kernels["kernel_conv"] = tf.get_variable("kernel_conv",
       [kernel_size, kernel_size, ranks[-1]], initializer = INITIALIZER_WEIGHT)
 
   if use_bias: kernels["bias"] = tf.get_variable("bias", [output_filters], initializer = INITIALIZER_BIAS)
 
-  return kernels 
+  return kernels
 
 def generate_params_conv2d_rtt(input_filters, output_filters, kernel_size, rate):
   input_shape = generate_shape(input_filters, order = 3)
@@ -956,7 +981,7 @@ def generate_params_conv2d_rtt(input_filters, output_filters, kernel_size, rate)
   rank = np.int(np.ceil((-b + np.sqrt(b ** 2 - 4 * a * c)) / (2*a)))
   if rank <= kernel_size ** 2 and rank <= input_shape[0] * output_shape[0]:
     params["ranks"] = [rank] * order
-    return params 
+    return params
 
   # Strategy 2:
   compressed_size -= kernel_size ** 4
@@ -977,5 +1002,5 @@ def generate_params_conv2d_rtt(input_filters, output_filters, kernel_size, rate)
   rank = np.power(compressed_size / unit_size, 0.5)
   rank = np.int(np.ceil(rank))
 
-  params["ranks"] = [input_shape[0] * output_shape[0]] + [rank] * (order - 2) + [kernel_size ** 2]  
+  params["ranks"] = [input_shape[0] * output_shape[0]] + [rank] * (order - 2) + [kernel_size ** 2]
   return params
